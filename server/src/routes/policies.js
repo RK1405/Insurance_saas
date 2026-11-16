@@ -1,15 +1,15 @@
 import { Router } from 'express';
 import { requireRole } from '../auth.js';
 import { one, query } from '../db.js';
-import { addDays, ah, audit, HttpError } from '../lib.js';
+import { addDays, ah, audit, HttpError, visibleLines } from '../lib.js';
 import { emit } from '../webhooks.js';
 
 const r = Router();
 
 function scope(req) {
-  const params = [req.org.id, req.user.lines];
+  const params = [req.org.id, visibleLines(req.user)];
   let where = 'p.org_id = $1 and p.line = any($2)';
-  if (req.user.role === 'agent') { params.push(req.user.id); where += ` and p.issued_by = $${params.length}`; }
+  if (req.user.role === 'agent') { params.push(req.user.id); where += ` and (p.issued_by = $${params.length} or q.created_by = $${params.length})`; }
   return { where, params };
 }
 

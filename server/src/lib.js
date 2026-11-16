@@ -60,6 +60,9 @@ export async function audit(req, action, entity, entityId, details) {
   ).catch((e) => console.error('audit failed', e.message));
 }
 
+/** Lines whose quotes/policies/reports a user can see: admins see the whole organisation. */
+export const visibleLines = (user) => (user.role === 'admin' ? ['retail', 'sme'] : user.lines);
+
 export function assertLine(user, line) {
   if (user && !user.lines.includes(line)) {
     throw new HttpError(403, `Your account is not set up for ${line === 'sme' ? 'Small Business' : 'Individual & Family'} health insurance. Update your insurance lines in Preferences or ask an admin.`);

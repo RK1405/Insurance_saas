@@ -1,8 +1,14 @@
 import { Link } from 'react-router-dom';
-import { api, compactMoney, LINE_LABEL, money, titleCase } from '../api.js';
+import { api, compactMoney, LINE_LABEL, money, ROLE_LABEL } from '../api.js';
 import { useAuth } from '../auth.jsx';
-import { Bars, MonthlyChart } from '../components/Charts.jsx';
+import { Bars, PIPELINE, PipelineChart } from '../components/Charts.jsx';
 import { Card, ErrorBox, Loading, Page, Stat, useLoad } from '../components/ui.jsx';
+
+const SCOPE_TEXT = {
+  organisation: 'Whole organisation · all team members · all lines',
+  lines: 'All team members',
+  own: 'Only quotes you created',
+};
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -17,10 +23,11 @@ export default function Dashboard() {
     </>
   );
 
+  const t = data?.totals;
   return (
     <Page
       title={`Namaste, ${first}`}
-      subtitle={`${user.role === 'agent' ? 'Your' : 'Team'} performance over the last ${days} days · ${user.lines.map((l) => LINE_LABEL[l]).join(' + ')}`}
+      subtitle={data ? `${SCOPE_TEXT[data.scope]}${data.scope === 'lines' ? ` · ${data.lines.map((l) => LINE_LABEL[l]).join(' + ')}` : ''} · last ${days} days` : ''}
       actions={actions}
     >
       <ErrorBox error={error} />
@@ -33,49 +40,70 @@ export default function Dashboard() {
             </div>
           )}
           <div className="grid g4">
-            <Stat label="Premium written (GWP)" value={compactMoney(data.totals.gwp)} sub={`${data.totals.issued} ${data.totals.issued === 1 ? 'policy' : 'policies'} · ${data.totals.lives} lives`} />
-            <Stat label="Quotes" value={data.totals.quotes} sub={`${data.totals.conversionPct}% converted to policy`} />
-            <Stat label="Straight-through rate" value={`${data.totals.stpPct}%`} sub="Auto-approved by digital underwriting" />
-            <Stat label="Avg. quote → policy" value={data.totals.avgIssueHours < 1 ? '< 1 h' : `${data.totals.avgIssueHours} h`} sub={`Avg premium ${money(data.totals.avg_premium)}`} />
+            <Stat
+              label="Premium written (excl. GST)"
+              value={compactMoney(t.gwp)}
+              sub={`${money(t.gwp_incl_gst)} incl. GST · ${t.issued} ${t.issued === 1 ? 'policy' : 'policies'} · ${t.lives} lives`}
+            />
+            <Stat label="Quotes" value={t.quotes} sub={`${t.issued} issued · ${t.conversionPct}% converted to policy`} />
+            <Stat label="Straight-through rate" value={`${t.stpPct}%`} sub="Auto-approved by digital underwriting" />
+            <Stat label="Avg. quote → policy" value={t.issued === 0 ? '—' : t.avgIssueHours < 1 ? '< 1 h' : `${t.avgIssueHours} h`} sub={`Avg premium ${money(t.avg_premium)} (excl. GST)`} />
           </div>
           <div className="grid g3">
-            <Card title="Monthly trend" className="span2"><MonthlyChart data={data.monthly} /></Card>
+            <Card title="Quote pipeline by month" className="span2"><PipelineChart data={data.monthly} /></Card>
             <Card title="Quote pipeline">
-              <Bars
-                rows={['quoted', 'referred', 'approved', 'issued', 'declined', 'expired'].map((s) => ({
-                  label: titleCase(s),
-                  value: data.byStatus.find((b) => b.status === s)?.count || 0,
-                  color: s === 'declined' ? 'var(--bad)' : s === 'referred' ? 'var(--warn)' : undefined,
-                }))}
-              />
+              <Bars rows={PIPELINE.map((s) => ({ label: s.label, value: data.byStatus.find((b) => b.status === s.key)?.count || 0, color: s.color }))} />
+              <p className="small muted" style={{ marginBottom: 0 }}>Each quote is counted once, in its current status. The total equals the Quotes figure ({t.quotes}).</p>
             </Card>
           </div>
-          <div className="grid g2">
-            <Card title="By line of business" pad={false}>
-              <table className="table">
-                <thead><tr><th>Line</th><th className="right">Quotes</th><th className="right">Policies</th><th className="right">GWP</th></tr></thead>
-                <tbody>
-                  {data.byLine.length === 0 && <tr><td colSpan={4} className="muted">No quotes yet.</td></tr>}
-                  {data.byLine.map((l) => (
-                    <tr key={l.line}><td>{LINE_LABEL[l.line]}</td><td className="right num">{l.quotes}</td><td className="right num">{l.issued}</td><td className="right num">{money(l.gwp)}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </Card>
-            {user.role !== 'agent' && (
-              <Card title="Top producers" pad={false}>
+
+          {data.team.length > 0 && (
+            <Card title="Team performance" pad={false}>
+              <div className="table-wrap">
                 <table className="table">
-                  <thead><tr><th>Name</th><th className="right">Quotes</th><th className="right">Policies</th><th className="right">GWP</th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>Name</th><th>Role</th><th className="right">Quotes</th>
+                      {PIPELINE.map((s) => <th key={s.key} className="right">{s.label}</th>)}
+                      <th className="right">Premium (excl. GST)</th><th className="right">Incl. GST</th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {data.topAgents.length === 0 && <tr><td colSpan={4} className="muted">No activity yet.</td></tr>}
-                    {data.topAgents.map((a) => (
-                      <tr key={a.name}><td>{a.name}</td><td className="right num">{a.quotes}</td><td className="right num">{a.issued}</td><td className="right num">{money(a.gwp)}</td></tr>
+                    {data.team.map((a) => (
+                      <tr key={a.name}>
+                        <td>{a.name}</td>
+                        <td className="small">{ROLE_LABEL[a.role] || 'Partner API'}</td>
+                        <td className="right num"><strong>{a.quotes}</strong></td>
+                        {PIPELINE.map((s) => <td key={s.key} className="right num">{a[s.key] || <span className="muted">0</span>}</td>)}
+                        <td className="right num">{money(a.gwp)}</td>
+                        <td className="right num">{money(a.gwp_incl_gst)}</td>
+                      </tr>
                     ))}
                   </tbody>
                 </table>
-              </Card>
-            )}
-          </div>
+              </div>
+            </Card>
+          )}
+
+          <Card title="By line of business" pad={false}>
+            <div className="table-wrap">
+              <table className="table">
+                <thead><tr><th>Line</th><th className="right">Quotes</th>{PIPELINE.map((s) => <th key={s.key} className="right">{s.label}</th>)}<th className="right">Premium (excl. GST)</th><th className="right">Incl. GST</th></tr></thead>
+                <tbody>
+                  {data.byLine.length === 0 && <tr><td colSpan={10} className="muted">No quotes yet.</td></tr>}
+                  {data.byLine.map((l) => (
+                    <tr key={l.line}>
+                      <td>{LINE_LABEL[l.line]}</td>
+                      <td className="right num"><strong>{l.quotes}</strong></td>
+                      {PIPELINE.map((s) => <td key={s.key} className="right num">{l[s.key] || <span className="muted">0</span>}</td>)}
+                      <td className="right num">{money(l.gwp)}</td>
+                      <td className="right num">{money(l.gwp_incl_gst)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
         </div>
       )}
     </Page>

@@ -1,16 +1,16 @@
 import { Router } from 'express';
 import { requireRole } from '../auth.js';
 import { one, query } from '../db.js';
-import { ah, assertLine, audit, HttpError, parse } from '../lib.js';
+import { ah, assertLine, audit, HttpError, parse, visibleLines } from '../lib.js';
 import { decisionSchema, issueSchema, lineEnum, retailPreviewSchema, retailQuoteSchema, smeQuoteSchema } from '../schemas.js';
 import { createRetailQuote, createSmeQuote, decide, issue, previewRetail } from '../services/quotes.js';
 import { createLink, latestLink, publicLink } from '../services/payments.js';
 
 const r = Router();
 
-/** Agents only see their own quotes; everyone only sees the lines of insurance they work on. */
+/** Admins see everything; underwriters see their lines; agents see only quotes they created. */
 function scope(req, alias = 'q') {
-  const params = [req.org.id, req.user.lines];
+  const params = [req.org.id, visibleLines(req.user)];
   let where = `${alias}.org_id = $1 and ${alias}.line = any($2)`;
   if (req.user.role === 'agent') { params.push(req.user.id); where += ` and ${alias}.created_by = $${params.length}`; }
   return { where, params };

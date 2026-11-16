@@ -263,3 +263,35 @@ test('payment link: generate → customer pays on public page → issue uses pay
   const audit = await admin.get('/api/audit');
   assert.ok(audit.body.events.some((e) => e.action === 'payment.received'));
 });
+
+test('visibility: admin sees every line and person; agent dashboard is own only; numbers reconcile', async () => {
+  // Admin narrows their own preference to retail only: still sees SME quotes, policies and reports
+  await admin.put('/api/me/preferences', { lines: ['retail'] });
+  const quotes = await admin.get('/api/quotes');
+  assert.ok(quotes.body.quotes.some((q) => q.line === 'sme'), 'admin sees SME quotes');
+  const policies = await admin.get('/api/policies');
+  assert.ok(policies.body.policies.some((p) => p.line === 'sme'), 'admin sees SME policies');
+
+  const a = await admin.get('/api/analytics/summary?days=30');
+  assert.equal(a.body.scope, 'organisation');
+  // pipeline statuses add up to total quotes; issued matches the quote list
+  const sumStatuses = a.body.byStatus.reduce((s, b) => s + b.count, 0);
+  assert.equal(sumStatuses, a.body.totals.quotes);
+  assert.equal(a.body.totals.quotes, quotes.body.quotes.length);
+  assert.equal(a.body.totals.issued, quotes.body.quotes.filter((q) => q.status === 'issued').length);
+  assert.equal(a.body.totals.issued, policies.body.policies.length);
+  // monthly stacked bars add up too
+  for (const m of a.body.monthly) assert.equal(['quoted', 'referred', 'approved', 'issued', 'declined', 'expired'].reduce((s, k) => s + m[k], 0), m.quotes);
+  // team report covers everyone; GWP incl. GST >= excl. GST
+  assert.equal(a.body.team.reduce((s, t) => s + t.quotes, 0), a.body.totals.quotes);
+  assert.ok(a.body.totals.gwp_incl_gst >= a.body.totals.gwp);
+
+  const ag = await agent.get('/api/analytics/summary?days=30');
+  assert.equal(ag.body.scope, 'own');
+  assert.deepEqual(ag.body.team, []);
+  const agentQuotes = await agent.get('/api/quotes');
+  assert.equal(ag.body.totals.quotes, agentQuotes.body.quotes.length);
+  const agentPolicies = await agent.get('/api/policies');
+  assert.equal(ag.body.totals.issued, agentPolicies.body.policies.length);
+  await admin.put('/api/me/preferences', { lines: ['retail', 'sme'] });
+});

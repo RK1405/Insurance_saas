@@ -6,9 +6,10 @@ import { Card, Empty, ErrorBox, LineBadge, Loading, Page, StatusBadge, useLoad }
 
 export function Policies() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { data, error, loading } = useLoad(() => api.get('/policies'));
   return (
-    <Page title="Policies" subtitle="Issued policies for your lines of business.">
+    <Page title="Policies" subtitle={user.role === 'agent' ? 'Policies from your quotes.' : user.role === 'admin' ? 'All policies issued in your organisation.' : 'Issued policies for your lines of business.'}>
       <Card pad={false}>
         <ErrorBox error={error} />
         {loading && !data ? <Loading /> : data?.policies.length === 0 ? <Empty>No policies issued yet.</Empty> : data && (
