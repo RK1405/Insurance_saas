@@ -153,4 +153,4 @@ There's no desktop app. Everything runs in the browser, including on phones (the
 | Rates | Illustrative starter rates | Each insurer's actuarially certified, IRDAI-filed rates, entered in the configurator |
 | Claims | Out of scope | Possible later: NHCX (National Health Claims Exchange) integration |
 
-See [`docs/INDIA-STRATEGY.md`](docs/INDIA-STRATEGY.md) for how to take this to market in India.
+See [`docs/BUILD-GUIDE.md`](docs/BUILD-GUIDE.md) for a step-by-step account of how the platform was built, and [`docs/INDIA-STRATEGY.md`](docs/INDIA-STRATEGY.md) for how to take it to market in India.
