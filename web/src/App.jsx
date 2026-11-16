@@ -1,9 +1,10 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './auth.jsx';
 import Layout from './components/Layout.jsx';
 import { Loading } from './components/ui.jsx';
 import { ChangePassword, Login, Register } from './pages/Auth.jsx';
 import Dashboard from './pages/Dashboard.jsx';
+import Pay from './pages/Pay.jsx';
 import { PolicyDetail, Policies } from './pages/Policies.jsx';
 import ProductEditor from './pages/ProductEditor.jsx';
 import Products from './pages/Products.jsx';
@@ -22,6 +23,9 @@ function Guard({ children, roles, line }) {
 
 function Routed() {
   const { loading, user } = useAuth();
+  const location = useLocation();
+  // The customer payment page is public and stands alone (no menu, no login)
+  if (location.pathname.startsWith('/pay/')) return <Routes><Route path="/pay/:token" element={<Pay />} /></Routes>;
   if (loading) return <Loading />;
   if (!user) {
     return (

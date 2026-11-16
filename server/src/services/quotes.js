@@ -139,6 +139,10 @@ export async function issue(org, user, quote, body) {
     throw new HttpError(409, 'This quote has expired. Create a new quote.');
   }
   if (user.role === 'agent' && !settings.workflow.agentsCanIssue) throw new HttpError(403, 'Agents are not allowed to issue policies in your organisation');
+  const paidLink = await one("select * from payment_links where quote_id = $1 and status = 'paid' order by paid_at desc limit 1", [quote.id]);
+  if (paidLink) {
+    body = { ...body, payment: { method: paidLink.method, reference: paidLink.reference, gateway: paidLink.gateway, paymentLinkId: paidLink.id, paidAt: paidLink.paid_at } };
+  }
   if (settings.workflow.requirePaymentReference && !body.payment.reference) throw new HttpError(400, 'Payment reference (UTR / transaction ID) is required');
   if (body.startDate < today() || body.startDate > addDays(today(), 60)) throw new HttpError(400, 'Start date must be between today and 60 days from today');
 

@@ -6,6 +6,7 @@ import { one, query } from '../db.js';
 import { ah, HttpError, parse } from '../lib.js';
 import { issueSchema, retailQuoteSchema, smeQuoteSchema } from '../schemas.js';
 import { createRetailQuote, createSmeQuote, issue, summary } from '../services/quotes.js';
+import { createLink, publicLink } from '../services/payments.js';
 
 const r = Router();
 r.use(rateLimit({ windowMs: 60 * 1000, limit: 120, standardHeaders: 'draft-7', legacyHeaders: false }));
@@ -41,6 +42,12 @@ r.get('/quotes/:number', ah(async (req, res) => {
   const q = await byNumber(req);
   const policy = await one('select policy_number, status, start_date, end_date from policies where quote_id = $1', [q.id]);
   res.json({ quote: summary(q), policy });
+}));
+
+r.post('/quotes/:number/payment-link', ah(async (req, res) => {
+  const q = await byNumber(req);
+  const link = publicLink(await createLink(req.org, null, q));
+  res.status(201).json({ paymentLink: { ...link, url: `${req.protocol}://${req.get('host')}${link.path}` } });
 }));
 
 r.post('/quotes/:number/issue', ah(async (req, res) => {

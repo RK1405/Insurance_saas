@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { query } from './db.js';
 
-export const WEBHOOK_EVENTS = ['quote.created', 'quote.referred', 'quote.approved', 'quote.declined', 'policy.issued', 'policy.cancelled'];
+export const WEBHOOK_EVENTS = ['quote.created', 'quote.referred', 'quote.approved', 'quote.declined', 'payment.received', 'policy.issued', 'policy.cancelled'];
 
 /** Fire-and-forget delivery of an event to every subscribed webhook of the organisation. */
 export function emit(orgId, event, data) {

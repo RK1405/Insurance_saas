@@ -33,7 +33,8 @@ Claims are out of scope, as in the product this is modelled on. The platform cov
 - SME group underwriting looks at group size, average-age loading and the share of parents (anti-selection).
 
 **Issuance**
-- Payment capture (UPI / card / net banking / NEFT / cheque with a reference), policy number generation, and a printable **policy schedule** that includes members, benefits, waiting periods, declared pre-existing diseases, exclusions and a Section 80D note.
+- **Three-stage issuance:** ① generate a payment link and share it by WhatsApp, SMS, email or copy → ② the customer pays on a public, mobile-friendly payment page (test mode, no real money) and the agent's screen updates automatically → ③ issue the policy with the payment reference filled in. Offline payments (NEFT / cheque) can still be recorded by hand.
+- Policy number generation, and a printable **policy schedule** that includes members, benefits, waiting periods, declared pre-existing diseases, exclusions and a Section 80D note.
 - GST is configurable: **0% on individual health (exempt from 22 Sep 2025)** and **18% on group health** by default.
 - Free-look cancellation is detected automatically.
 
@@ -146,7 +147,7 @@ There's no desktop app. Everything runs in the browser, including on phones (the
 
 | Area | Today | Production integration (India) |
 |---|---|---|
-| Payment | Payment reference is entered manually | Razorpay / PayU / Cashfree payment links and webhooks; UPI AutoPay e-mandates for renewals |
+| Payment | **Dummy payment links**: agent generates a link (copy / WhatsApp / SMS / email), the customer pays on a test page, then the policy is issued with the payment reference filled in. Offline NEFT/cheque can still be recorded manually | Replace the dummy gateway in `server/src/services/payments.js` with Razorpay / PayU / Cashfree; add UPI AutoPay e-mandates for renewals |
 | KYC | PAN + last 4 digits of Aadhaar captured (full Aadhaar is never stored) | CKYC lookup, DigiLocker, Aadhaar OTP e-KYC through a licensed KUA, video KYC |
 | Documents | Printable HTML schedule (browser "Save as PDF") | Server-side PDF, Aadhaar eSign, policy wording and Customer Information Sheet attached |
 | Notifications | None (admins share temporary passwords themselves) | Email (SES / SendGrid), SMS (DLT-registered templates), WhatsApp Business API |

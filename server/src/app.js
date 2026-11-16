@@ -14,6 +14,7 @@ import integrations from './routes/integrations.js';
 import me from './routes/me.js';
 import policies from './routes/policies.js';
 import products from './routes/products.js';
+import pay from './routes/pay.js';
 import publicApi from './routes/publicApi.js';
 import quotes from './routes/quotes.js';
 import settings from './routes/settings.js';
@@ -57,6 +58,7 @@ export function createApp() {
 
   app.use('/api/auth', auth);
   app.use('/api/v1', publicApi);
+  app.use('/api/pay', pay);
   app.use('/api/me', requireAuth, me);
 
   const secured = express.Router();

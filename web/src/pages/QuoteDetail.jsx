@@ -107,7 +107,7 @@ export default function QuoteDetail() {
           </div>
           {q.status === 'referred' && isStaff && <DecisionPanel quote={q} onDone={reload} />}
           {q.status === 'referred' && !isStaff && <div className="alert warn">Waiting for an underwriter. You will be able to issue once it is approved.</div>}
-          {['quoted', 'approved'].includes(q.status) && <IssuePanel quote={q} />}
+          {['quoted', 'approved'].includes(q.status) && <IssuePanel quote={q} initialLink={data.paymentLink} />}
         </div>
       </div>
     </Page>
@@ -159,18 +159,52 @@ function DecisionPanel({ quote, onDone }) {
   );
 }
 
-function IssuePanel({ quote }) {
+const STAGES = ['Payment link', 'Customer pays', 'Issue policy'];
+
+function IssuePanel({ quote, initialLink }) {
   const navigate = useNavigate();
   const today = new Date().toISOString().slice(0, 10);
+  const [link, setLink] = useState(initialLink);
+  const [offline, setOffline] = useState(false);
   const [form, setForm] = useState({ startDate: today, method: 'upi', reference: '' });
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => setError(null), [form]);
+  const [copied, setCopied] = useState(false);
+  const paid = link?.status === 'paid';
+  const stage = paid ? 2 : link ? 1 : 0;
+  const url = link ? `${window.location.origin}${link.path}` : '';
 
-  const submit = async () => {
-    setBusy(true);
+  // While waiting for the customer, check for payment every 5 seconds
+  useEffect(() => {
+    if (!link || paid) return undefined;
+    const t = setInterval(() => {
+      api.get(`/quotes/${quote.id}/payment-link`).then((d) => d.paymentLink && setLink(d.paymentLink)).catch(() => {});
+    }, 5000);
+    return () => clearInterval(t);
+  }, [link, paid, quote.id]);
+
+  const generate = async () => {
+    setBusy(true); setError(null);
     try {
-      const { policy } = await api.post(`/quotes/${quote.id}/issue`, { startDate: form.startDate, payment: { method: form.method, reference: form.reference } });
+      const d = await api.post(`/quotes/${quote.id}/payment-link`);
+      setLink(d.paymentLink); setOffline(false);
+    } catch (e) { setError(e); } finally { setBusy(false); }
+  };
+
+  const refresh = async () => {
+    const d = await api.get(`/quotes/${quote.id}/payment-link`);
+    setLink(d.paymentLink);
+  };
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* ignore */ }
+  };
+
+  const issueNow = async () => {
+    setBusy(true); setError(null);
+    try {
+      const payment = paid ? { method: link.method, reference: link.reference } : { method: form.method, reference: form.reference };
+      const { policy } = await api.post(`/quotes/${quote.id}/issue`, { startDate: form.startDate, payment });
       navigate(`/policies/${policy.id}`);
     } catch (e) {
       setError(e);
@@ -178,18 +212,76 @@ function IssuePanel({ quote }) {
     }
   };
 
+  const c = quote.customer;
+  const msg = `Dear ${c.name || c.contactName}, please pay ${money(quote.total)} for your health insurance (quote ${quote.quote_number}) using this secure link: ${url}`;
+  const phone = c.phone || c.contactPhone;
+  const email = c.email || c.contactEmail;
+
+  const startDate = (
+    <Field label="Policy start date"><input type="date" min={today} value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></Field>
+  );
+
   return (
     <Card title="Collect payment & issue">
       <div className="stack">
+        <div className="mini-steps">
+          {STAGES.map((s, i) => (
+            <span key={s} className={`mini-step ${i === stage && !offline ? 'active' : ''} ${i < stage ? 'done' : ''}`}><b>{i < stage ? '✓' : i + 1}</b>{s}</span>
+          ))}
+        </div>
         <ErrorBox error={error} />
-        <Field label="Policy start date"><input type="date" min={today} value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} /></Field>
-        <Field label="Payment mode">
-          <select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>
-            <option value="upi">UPI</option><option value="card">Debit / credit card</option><option value="netbanking">Net banking</option><option value="neft">NEFT / RTGS</option><option value="cheque">Cheque</option>
-          </select>
-        </Field>
-        <Field label="Payment reference" hint="UPI UTR / gateway transaction ID / cheque number"><input value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} /></Field>
-        <button className="btn primary" disabled={busy} onClick={submit}>{busy ? 'Issuing…' : `Issue policy · ${money(quote.total)}`}</button>
+
+        {!link && !offline && (
+          <>
+            <p className="small muted" style={{ margin: 0 }}>Send the customer a secure link to pay {money(quote.total)} by UPI, card or net banking. The policy can be issued as soon as the payment is received.</p>
+            <button className="btn primary" disabled={busy} onClick={generate}>{busy ? 'Generating…' : 'Generate payment link'}</button>
+            <button className="btn ghost sm" onClick={() => setOffline(true)}>Customer paid offline (NEFT / cheque)? Record it instead</button>
+          </>
+        )}
+
+        {link && !paid && !offline && (
+          <>
+            <div className="alert warn">Link sent: waiting for the customer to pay.<div className="small" style={{ fontWeight: 400 }}>Checking every few seconds · expires {fmtDateTime(link.expiresAt)}</div></div>
+            <Field label="Payment link"><input readOnly value={url} onFocus={(e) => e.target.select()} /></Field>
+            <div className="row">
+              <button className="btn sm" onClick={copy}>{copied ? 'Copied ✓' : 'Copy link'}</button>
+              {phone && <a className="btn sm" target="_blank" rel="noreferrer" href={`https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`}>WhatsApp</a>}
+              {phone && <a className="btn sm" href={`sms:+91${phone}?body=${encodeURIComponent(msg)}`}>SMS</a>}
+              {email && <a className="btn sm" href={`mailto:${email}?subject=${encodeURIComponent(`Payment for your health insurance – ${quote.quote_number}`)}&body=${encodeURIComponent(msg)}`}>Email</a>}
+            </div>
+            <div className="row">
+              <a className="btn sm primary" target="_blank" rel="noreferrer" href={link.path}>Open payment page (test as customer)</a>
+              <button className="btn sm" onClick={refresh}>Refresh status</button>
+              <button className="btn sm ghost" disabled={busy} onClick={generate}>New link</button>
+            </div>
+            {link.gateway === 'dummy' && <p className="small muted" style={{ margin: 0 }}>Test mode: no real money is collected. Connect Razorpay / PayU / Cashfree to take real payments.</p>}
+          </>
+        )}
+
+        {paid && (
+          <>
+            <div className="alert ok">
+              Payment received: {money(link.amount, true)}
+              <div className="small" style={{ fontWeight: 400 }}>{link.method?.toUpperCase()} · ref <span className="code">{link.reference}</span> · {fmtDateTime(link.paidAt)}</div>
+            </div>
+            {startDate}
+            <button className="btn primary" disabled={busy} onClick={issueNow}>{busy ? 'Issuing…' : 'Issue policy'}</button>
+          </>
+        )}
+
+        {offline && !paid && (
+          <>
+            {startDate}
+            <Field label="Payment mode">
+              <select value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}>
+                <option value="neft">NEFT / RTGS</option><option value="cheque">Cheque</option><option value="upi">UPI</option><option value="card">Debit / credit card</option><option value="netbanking">Net banking</option>
+              </select>
+            </Field>
+            <Field label="Payment reference" hint="UTR / transaction ID / cheque number"><input value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} /></Field>
+            <button className="btn primary" disabled={busy} onClick={issueNow}>{busy ? 'Issuing…' : `Issue policy · ${money(quote.total)}`}</button>
+            <button className="btn ghost sm" onClick={() => setOffline(false)}>Back to payment link</button>
+          </>
+        )}
       </div>
     </Card>
   );

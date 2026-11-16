@@ -223,3 +223,43 @@ test('analytics and audit', async () => {
   assert.ok(audit.body.events.some((e) => e.action === 'policy.issued'));
   assert.equal((await agent.get('/api/audit')).status, 403);
 });
+
+test('payment link: generate → customer pays on public page → issue uses payment reference', async () => {
+  const q = await agent.post('/api/quotes/retail', { productId: ctx.retail, coverType: 'individual', sumInsured: 500000, cityTier: 2, members: [member('Payer', 'self', 31)], customer });
+  const id = q.body.quote.id;
+  const l1 = await agent.post(`/api/quotes/${id}/payment-link`);
+  assert.equal(l1.status, 201);
+  assert.equal(l1.body.paymentLink.status, 'created');
+  assert.equal(l1.body.paymentLink.amount, q.body.quote.total);
+  // a new link cancels the old one
+  const l2 = await agent.post(`/api/quotes/${id}/payment-link`);
+  const old = await client().get(`/api/pay/${l1.body.paymentLink.token}`);
+  assert.equal(old.body.payment.status, 'cancelled');
+  assert.equal((await client().post(`/api/pay/${l1.body.paymentLink.token}/complete`, { method: 'upi' })).status, 410);
+
+  const token = l2.body.paymentLink.token;
+  const view = await client().get(`/api/pay/${token}`); // public, no login
+  assert.equal(view.status, 200);
+  assert.equal(view.body.payment.status, 'created');
+  assert.equal(view.body.payment.testMode, true);
+  assert.equal((await client().get('/api/pay/not-a-real-token')).status, 404);
+
+  const paid = await client().post(`/api/pay/${token}/complete`, { method: 'card' });
+  assert.equal(paid.status, 200);
+  assert.match(paid.body.payment.reference, /^pay_TEST[0-9A-F]+$/);
+  assert.equal((await client().post(`/api/pay/${token}/complete`, { method: 'card' })).status, 409, 'cannot pay twice');
+  assert.equal((await agent.post(`/api/quotes/${id}/payment-link`)).status, 409, 'no new link after payment');
+
+  const detail = await agent.get(`/api/quotes/${id}`);
+  assert.equal(detail.body.paymentLink.status, 'paid');
+  // Issue without typing a reference: the paid link's reference is used
+  const iss = await agent.post(`/api/quotes/${id}/issue`, { startDate: new Date().toISOString().slice(0, 10), payment: { method: 'upi' } });
+  assert.equal(iss.status, 201);
+  assert.equal(iss.body.policy.payment.reference, paid.body.payment.reference);
+  assert.equal(iss.body.policy.payment.method, 'card');
+  assert.equal(iss.body.policy.payment.gateway, 'dummy');
+  // paying after issue is impossible; another org cannot create links for this quote
+  assert.equal((await admin2.post(`/api/quotes/${id}/payment-link`)).status, 404);
+  const audit = await admin.get('/api/audit');
+  assert.ok(audit.body.events.some((e) => e.action === 'payment.received'));
+});

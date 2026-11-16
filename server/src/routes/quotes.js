@@ -4,6 +4,7 @@ import { one, query } from '../db.js';
 import { ah, assertLine, audit, HttpError, parse } from '../lib.js';
 import { decisionSchema, issueSchema, lineEnum, retailPreviewSchema, retailQuoteSchema, smeQuoteSchema } from '../schemas.js';
 import { createRetailQuote, createSmeQuote, decide, issue, previewRetail } from '../services/quotes.js';
+import { createLink, latestLink, publicLink } from '../services/payments.js';
 
 const r = Router();
 
@@ -64,7 +65,7 @@ r.get('/:id', ah(async (req, res) => {
   const product = await one('select id, code, name, version, line, config from products where id = $1', [q.product_id]);
   const policy = await one('select id, policy_number from policies where quote_id = $1', [q.id]);
   const decidedBy = q.decided_by ? await one('select name from users where id = $1', [q.decided_by]) : null;
-  res.json({ quote: q, product, policy, decidedBy: decidedBy?.name });
+  res.json({ quote: q, product, policy, decidedBy: decidedBy?.name, paymentLink: publicLink(await latestLink(q.id)) });
 }));
 
 r.post('/:id/decision', requireRole('admin', 'underwriter'), ah(async (req, res) => {
@@ -72,6 +73,19 @@ r.post('/:id/decision', requireRole('admin', 'underwriter'), ah(async (req, res)
   const updated = await decide(req.org, req.user, q, parse(decisionSchema, req.body));
   await audit(req, `quote.${updated.status}`, 'quote', q.id, { number: q.quote_number });
   res.json({ quote: updated });
+}));
+
+// Stage 1 of issuance: create (or re-create) a payment link for the customer
+r.post('/:id/payment-link', ah(async (req, res) => {
+  const q = await loadQuote(req);
+  const link = await createLink(req.org, req.user, q);
+  await audit(req, 'payment_link.created', 'quote', q.id, { number: q.quote_number, amount: link.amount });
+  res.status(201).json({ paymentLink: publicLink(link) });
+}));
+
+r.get('/:id/payment-link', ah(async (req, res) => {
+  const q = await loadQuote(req);
+  res.json({ paymentLink: publicLink(await latestLink(q.id)) });
 }));
 
 r.post('/:id/issue', ah(async (req, res) => {

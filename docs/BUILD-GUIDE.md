@@ -215,6 +215,15 @@ Creates the organisation (with a unique short code), the first admin user and tw
 
 Quote numbers look like `Q-ORG-2026-000001`, generated from the `counters` table inside the transaction.
 
+### `server/src/services/payments.js`: payment links (added later)
+Issuance became three stages: **payment link → customer pays → issue policy**.
+- Migration `002_payment_links.sql` adds the `payment_links` table: quote, unguessable token, amount, status (`created` / `paid` / `cancelled`), method, reference and expiry (7 days or the quote's validity, whichever is sooner).
+- `createLink` makes a new link for a quoted or approved quote and cancels any older unpaid link.
+- The public endpoints `GET /api/pay/:token` and `POST /api/pay/:token/complete` (no login, rate-limited) power the customer page `web/src/pages/Pay.jsx`. The **dummy gateway** marks the link paid with a `pay_TEST…` reference, writes `payment.received` to the audit log and fires the `payment.received` webhook.
+- `issue` automatically uses the paid link's method and reference, so the agent doesn't type anything. Without a paid link, the manual NEFT/cheque route still works.
+- The agent's screen (`IssuePanel` in `QuoteDetail.jsx`) shows the 3 stages, share buttons (copy, WhatsApp, SMS, email) and checks for payment every 5 seconds.
+- To take real money, replace the dummy part with a gateway (for example Razorpay Payment Links + its `payment_link.paid` webhook); the rest of the flow stays the same.
+
 ---
 
 ## Step 8: Build the API endpoints
@@ -229,6 +238,7 @@ Folder: `server/src/routes/`
 | `products.js` | List, create, edit draft, live compliance check, publish, new version, archive |
 | `quotes.js` | List (filtered by line and role), retail preview, create retail / SME, detail, **decision**, **issue** |
 | `policies.js` | List, detail, cancel (detects free-look) |
+| `pay.js` | Public customer payment page API (`/api/pay/:token`) |
 | `analytics.js` | Dashboard numbers: GWP, conversion, STP rate, turnaround, monthly trend, top producers |
 | `settings.js` | Underwriting rules, workflow and GST settings; reference lists |
 | `integrations.js` | API keys and webhooks (admin) |
