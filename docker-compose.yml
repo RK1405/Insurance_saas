@@ -1,0 +1,29 @@
+# Local / single-VM run: `docker compose up --build`, then open http://localhost:8080
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: healthstack
+      POSTGRES_USER: healthstack
+      POSTGRES_PASSWORD: healthstack
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U healthstack"]
+      interval: 5s
+      retries: 10
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: postgres://healthstack:healthstack@db:5432/healthstack
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-string-of-64-chars-xxxxxxxxxxxxxxxx}
+      SEED_DEMO: ${SEED_DEMO:-true}
+      # Cookies are marked Secure in production; set COOKIE_INSECURE only for plain-http local testing
+      COOKIE_INSECURE: ${COOKIE_INSECURE:-true}
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  pgdata:
